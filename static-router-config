@@ -1,0 +1,204 @@
+#!/bin/bash
+
+# Author: Mate-Laszlo Lang: mate@smartup.io
+# Date: 22 July, 2016
+#
+
+# This script will take a downloaded Generic (Vendor Agnostic) AWS VPN Connection txt file
+# and create a MikroTik specific router configuration to set up VPN connection into your.
+# VPC in AWS.
+
+# Use it at your own risk, I am not accountable for any trouble it may cause.
+
+set -e
+
+AWS_GENERIC_CONFIG_FILE=$1
+
+if [ x == x$AWS_GENERIC_CONFIG_FILE ];
+then
+  echo "You should provide an AWS generated config file"
+  exit 1
+fi
+
+AWS_ADDRESSES_TO_USE=$(grep --color -A2 'Address' $1 | sed 's/.*:\ \(.*\)$/\1/' | grep '^[0-9].*$' | sed 's/^\(.*\)\/.*$/\1/')
+read -a AWS_ADDRESSES_TO_USE <<< $AWS_ADDRESSES_TO_USE
+
+AWS_SECRETS_TO_USE=$(grep 'Pre-Shared\ Key.*:' $1 | sed 's/.*: \(.*\)$/\1/')
+read -a AWS_SECRETS_TO_USE <<< $AWS_SECRETS_TO_USE
+
+# Tunnel 1 details
+AWS_TUNNEL1_PUBLIC_ADDR="${AWS_ADDRESSES_TO_USE[1]}"
+AWS_TUNNEL1_INSIDE_CUSTOMER_GATEWAY_ADDR="${AWS_ADDRESSES_TO_USE[2]}"
+AWS_TUNNEL1_INSIDE_VIRTUAL_GATEWAY_ADDR="${AWS_ADDRESSES_TO_USE[3]}"
+AWS_TUNNEL1_INSIDE_NETWORK=$(echo $AWS_TUNNEL1_INSIDE_VIRTUAL_GATEWAY_ADDR | sed 's/\(^.*\..*\..*\.\).*$/\10/')
+AWS_TUNNEL1_SHARED_SECRET="${AWS_SECRETS_TO_USE[0]}"
+
+# Tunnel 2 details
+AWS_TUNNEL2_PUBLIC_ADDR="${AWS_ADDRESSES_TO_USE[5]}"
+AWS_TUNNEL2_INSIDE_CUSTOMER_GATEWAY_ADDR="${AWS_ADDRESSES_TO_USE[6]}"
+AWS_TUNNEL2_INSIDE_VIRTUAL_GATEWAY_ADDR="${AWS_ADDRESSES_TO_USE[7]}"
+AWS_TUNNEL2_INSIDE_NETWORK=$(echo $AWS_TUNNEL2_INSIDE_VIRTUAL_GATEWAY_ADDR | sed 's/\(^.*\..*\..*\.\).*$/\10/')
+
+SECRET_2="${AWS_SECRETS_TO_USE[1]}"
+
+# Home Network Configuration
+CUSTOMER_PUBLIC_ADDR="${AWS_ADDRESSES_TO_USE[0]}"
+
+# VPC Details
+DEFAULT_LOCAL_NET="$(ip route | grep 'scope link' | sed 's/^\([0-9./]*\).*$/\1/')"
+echo -n "Type in local network CIDR (Enter to use guessed $DEFAULT_LOCAL_NET): "
+read LOCAL_NET
+if [ x == x$LOCAL_NET ];
+then
+  LOCAL_NET=$DEFAULT_LOCAL_NET
+fi
+
+# VPC Details
+echo -n "Type in your VPC CIDR [10.0.0.0/16]):"
+read VPC_NET
+if [ x == x$VPC_NET ];
+then
+  VPC_NET="10.0.0.0/16"
+fi
+
+echo
+echo "Your configuration will be created by using the following values"
+echo "Your public adddress: $CUSTOMER_PUBLIC_ADDR"
+echo "Your local network CIDR: $LOCAL_NET"
+echo "Your VPC's CIDR: $VPC_NET"
+echo
+
+echo "AWS Tunnel #1 - Public Address: $AWS_TUNNEL1_PUBLIC_ADDR"
+echo "AWS Tunnel #1 - Inside Customer Gateway Address: $AWS_TUNNEL1_INSIDE_CUSTOMER_GATEWAY_ADDR"
+echo "AWS Tunnel #1 - Inside Virtual Gateway Address: $AWS_TUNNEL1_INSIDE_VIRTUAL_GATEWAY_ADDR"
+echo "AWS Tunnel #1 - Secret: $AWS_TUNNEL1_SHARED_SECRET"
+echo
+
+echo "AWS Tunnel #2 - Public Address: $AWS_TUNNEL2_PUBLIC_ADDR"
+echo "AWS Tunnel #2 - Inside Customer Gateway Address: $AWS_TUNNEL2_INSIDE_CUSTOMER_GATEWAY_ADDR"
+echo "AWS Tunnel #2 - Inside Virtual Gateway Address: $AWS_TUNNEL2_INSIDE_VIRTUAL_GATEWAY_ADDR"
+echo "AWS Tunnel #2 - Secret: $SECRET_2"
+echo
+
+echo -n "Is this correct(y/n)? "
+read CONFIRM
+if [ xy != x$CONFIRM ];
+then
+  echo "You backed out. Exiting."
+  exit 0
+fi
+
+echo -n "Generate the config file in [./mikrotik-aws-config]:"
+read CONFIG_FILE_PATH
+if [ x == x$CONFIG_FILE_PATH ];
+then
+  CONFIG_FILE_PATH="mikrotik-aws-config"
+fi
+
+echo \
+"# Create IPSec proposal
+/ip ipsec proposal \
+    add name=AWS \
+    auth-algorithms=sha1 \
+    enc-algorithms=aes-128-cbc \
+    lifetime=8m \
+    pfs-group=modp1024
+
+# Create IPSec peers
+/ip ipsec peer \
+    add comment=\"AWS Peer 1\" \
+    address=$AWS_TUNNEL1_PUBLIC_ADDR/32 \
+    local-address=$CUSTOMER_PUBLIC_ADDR \
+    secret=$AWS_TUNNEL1_SHARED_SECRET \
+    dpd-interval=10s dpd-maximum-failures=3 \
+    enc-algorithm=aes-128 lifetime=8h \
+    nat-traversal=no
+
+/ip ipsec peer \
+    add comment=\"AWS Peer 2\" \
+    address=$AWS_TUNNEL2_PUBLIC_ADDR/32 \
+    local-address=$CUSTOMER_PUBLIC_ADDR \
+    secret=$SECRET_2 \
+    dpd-interval=10s dpd-maximum-failures=3 \
+    enc-algorithm=aes-128 lifetime=8h \
+    nat-traversal=no
+
+# Create IPSec Policies
+/ip ipsec policy \
+    add comment=\"AWS Tunnel 1\" \
+    proposal=AWS \
+    src-address=0.0.0.0/0 dst-address=$VPC_NET \
+    sa-src-address=$CUSTOMER_PUBLIC_ADDR sa-dst-address=$AWS_TUNNEL1_PUBLIC_ADDR \
+    tunnel=yes
+
+/ip ipsec policy \
+    add comment=\"AWS Tunnel 1\" \
+    proposal=AWS \
+    src-address=0.0.0.0/0 dst-address=$AWS_TUNNEL1_INSIDE_VIRTUAL_GATEWAY_ADDR/32 \
+    sa-src-address=$CUSTOMER_PUBLIC_ADDR sa-dst-address=$AWS_TUNNEL1_PUBLIC_ADDR  \
+    tunnel=yes
+
+/ip ipsec policy \
+    add comment=\"AWS Tunnel 2\" \
+    proposal=AWS \
+    src-address=0.0.0.0/0 dst-address=$VPC_NET \
+    sa-src-address=$CUSTOMER_PUBLIC_ADDR sa-dst-address=$AWS_TUNNEL2_PUBLIC_ADDR \
+    tunnel=yes
+
+/ip ipsec policy \
+    add comment=\"AWS Tunnel 2\" \
+    proposal=AWS \
+    src-address=0.0.0.0/0 dst-address=$AWS_TUNNEL2_INSIDE_VIRTUAL_GATEWAY_ADDR/32 \
+    sa-src-address=$CUSTOMER_PUBLIC_ADDR sa-dst-address=$AWS_TUNNEL2_PUBLIC_ADDR  \
+    tunnel=yes
+
+# NAT
+/ip firewall nat \
+    add chain=srcnat \
+    action=accept \
+    dst-address=$VPC_NET src-address=$LOCAL_NET
+
+/ip firewall nat \
+    add chain=srcnat \
+    action=accept \
+    dst-address=$LOCAL_NET src-address=$VPC_NET
+
+# IPSec IKE Firewall Filters
+/ip firewall filter \
+    add comment=\"AWS Tunnel 1\" \
+    chain=input \
+    protocol=ipsec-esp \
+    src-address=$AWS_TUNNEL1_PUBLIC_ADDR dst-address=$CUSTOMER_PUBLIC_ADDR
+
+/ip firewall filter \
+    add comment=\"AWS Tunnel 1\" \
+    chain=input \
+    protocol=udp \
+    src-address=$AWS_TUNNEL1_PUBLIC_ADDR  src-port=500 \
+    dst-address=$CUSTOMER_PUBLIC_ADDR dst-port=500
+
+/ip firewall filter \
+    add comment=\"AWS Tunnel 2\" \
+    chain=input \
+    protocol=ipsec-esp \
+    src-address=$AWS_TUNNEL2_PUBLIC_ADDR dst-address=$CUSTOMER_PUBLIC_ADDR
+
+/ip firewall filter \
+    add comment=\"AWS Tunnel 2\" \
+    chain=input \
+    protocol=udp \
+    src-address=$AWS_TUNNEL2_PUBLIC_ADDR  src-port=500 \
+    dst-address=$CUSTOMER_PUBLIC_ADDR dst-port=500
+
+# Add static route
+/ip route add distance=1 dst-address=$VPC_NET gateway=$AWS_TUNNEL1_INSIDE_VIRTUAL_GATEWAY_ADDR
+/ip route add distance=1 dst-address=$VPC_NET gateway=$AWS_TUNNEL2_INSIDE_VIRTUAL_GATEWAY_ADDR
+
+# Addresses
+ip address add address=$AWS_TUNNEL1_INSIDE_CUSTOMER_GATEWAY_ADDR/30 disabled=no interface=ether1 network=$AWS_TUNNEL1_INSIDE_NETWORK
+ip address add address=$AWS_TUNNEL2_INSIDE_CUSTOMER_GATEWAY_ADDR/30 disabled=no interface=ether1 network=$AWS_TUNNEL2_INSIDE_NETWORK
+" > $CONFIG_FILE_PATH
+
+echo "Your config file has been generated in $CONFIG_FILE_PATH"
+
+exit 0
