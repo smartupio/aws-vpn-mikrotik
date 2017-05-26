@@ -9,8 +9,6 @@ We have created a script that will transform your Generic (Vendor Agnostic) AWS 
 
 Obviously, we are not accountable for any trouble that this causes to you or your organization, so use it on your own risk.
 
-Thanks Mate Lang for the original script.
-
 ## Usage example
 ```
 # You have to give the script one argument,
