@@ -20,8 +20,8 @@ then
   exit 1
 fi
 
-AWS_ADDRESSES_TO_USEt=$(grep --color -A2 'Address' $1 | sed 's/.*:\ \(.*\)$/\1/' | grep '^[0-9].*$' | sed 's/^\(.*\)\/.*$/\1/')
-readarray -t AWS_ADDRESSES_TO_USE <<< $AWS_ADDRESSES_TO_USEt
+AWS_ADDRESSES_TO_USE=$(grep --color -A2 'Address' $1 | sed 's/.*:\ \(.*\)$/\1/' | grep '^[0-9].*$' | sed 's/^\(.*\)\/.*$/\1/')
+readarray -t AWS_ADDRESSES_TO_USE <<< $AWS_ADDRESSES_TO_USE
 
 
 AWS_SECRETS_TO_USE=$(grep 'Pre-Shared\ Key.*:' $1 | sed 's/.*: \(.*\)$/\1/')
