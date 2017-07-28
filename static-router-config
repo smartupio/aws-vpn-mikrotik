@@ -21,11 +21,11 @@ then
 fi
 
 AWS_ADDRESSES_TO_USE=$(grep --color -A2 'Address' $1 | sed 's/.*:\ \(.*\)$/\1/' | grep '^[0-9].*$' | sed 's/^\(.*\)\/.*$/\1/')
-readarray -t AWS_ADDRESSES_TO_USE <<< $AWS_ADDRESSES_TO_USE
+readarray -t AWS_ADDRESSES_TO_USE <<< "$AWS_ADDRESSES_TO_USE"
 
 
 AWS_SECRETS_TO_USE=$(grep 'Pre-Shared\ Key.*:' $1 | sed 's/.*: \(.*\)$/\1/')
-readarray -t AWS_SECRETS_TO_USE <<< $AWS_SECRETS_TO_USE
+readarray -t AWS_SECRETS_TO_USE <<< "$AWS_SECRETS_TO_USE"
 
 # Tunnel 1 details
 AWS_TUNNEL1_PUBLIC_ADDR="${AWS_ADDRESSES_TO_USE[1]}"
