@@ -196,8 +196,8 @@ echo \
 /ip route add distance=1 dst-address=$VPC_NET gateway=$AWS_TUNNEL2_INSIDE_VIRTUAL_GATEWAY_ADDR
 
 # Addresses
-ip address add address=$AWS_TUNNEL1_INSIDE_CUSTOMER_GATEWAY_ADDR/30 disabled=no interface=ether1 network=$AWS_TUNNEL1_INSIDE_NETWORK
-ip address add address=$AWS_TUNNEL2_INSIDE_CUSTOMER_GATEWAY_ADDR/30 disabled=no interface=ether1 network=$AWS_TUNNEL2_INSIDE_NETWORK
+ip address add address=$AWS_TUNNEL1_INSIDE_CUSTOMER_GATEWAY_ADDR/30 disabled=no interface=ether1
+ip address add address=$AWS_TUNNEL2_INSIDE_CUSTOMER_GATEWAY_ADDR/30 disabled=no interface=ether1
 " > $CONFIG_FILE_PATH
 
 echo "Your config file has been generated in $CONFIG_FILE_PATH"
